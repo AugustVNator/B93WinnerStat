@@ -24,3 +24,7 @@ out/
 # OS files
 .DS_Store
 
+# Database
+*.db
+*.db-journal
+
