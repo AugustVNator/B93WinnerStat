@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Person
@@ -30,7 +31,8 @@ enum class Screen {
     WELCOME,
     TEAM_DASHBOARD,
     PLAYER_STATS,
-    TRAINING_SESSION
+    TRAINING_SESSION,
+    TRAINING_HISTORY
 }
 
 fun main() = application {
@@ -72,6 +74,9 @@ fun App() {
             },
             onTrainingSession = {
                 currentScreen = Screen.TRAINING_SESSION
+            },
+            onTrainingHistory = {
+                currentScreen = Screen.TRAINING_HISTORY
             }
         )
         Screen.PLAYER_STATS -> PlayerStatsScreen(
@@ -82,6 +87,12 @@ fun App() {
             }
         )
         Screen.TRAINING_SESSION -> TrainingSessionScreen(
+            team = selectedTeam!!,
+            onBack = {
+                currentScreen = Screen.TEAM_DASHBOARD
+            }
+        )
+        Screen.TRAINING_HISTORY -> TrainingHistoryScreen(
             team = selectedTeam!!,
             onBack = {
                 currentScreen = Screen.TEAM_DASHBOARD
@@ -259,7 +270,8 @@ fun TeamDashboardScreen(
     team: TeamData,
     onBack: () -> Unit,
     onPlayerSelected: (PlayerData) -> Unit,
-    onTrainingSession: () -> Unit
+    onTrainingSession: () -> Unit,
+    onTrainingHistory: () -> Unit
 ) {
     var players by remember { mutableStateOf(Database.getPlayersByTeam(team.id).sortedBy { it.name.lowercase() }) }
     var newPlayerName by remember { mutableStateOf("") }
@@ -302,7 +314,7 @@ fun TeamDashboardScreen(
             // Action buttons row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Training Session button (Award Points)
                 Button(
@@ -311,8 +323,18 @@ fun TeamDashboardScreen(
                     enabled = players.isNotEmpty()
                 ) {
                     Icon(Icons.Default.Star, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Training Session")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("New Training")
+                }
+
+                // Training History button
+                OutlinedButton(
+                    onClick = onTrainingHistory,
+                    modifier = Modifier.weight(1f).height(56.dp)
+                ) {
+                    Icon(Icons.Default.DateRange, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("History")
                 }
 
                 // Add Player button
@@ -321,7 +343,7 @@ fun TeamDashboardScreen(
                     modifier = Modifier.weight(1f).height(56.dp)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text("Add Player")
                 }
             }
@@ -642,6 +664,11 @@ fun TrainingSessionScreen(team: TeamData, onBack: () -> Unit) {
     var attendedPlayers by remember { mutableStateOf(setOf<Int>()) }
     var pointsAwarded by remember { mutableStateOf(mapOf<Int, Int>()) }
 
+    // Date selection - default to today
+    var selectedDay by remember { mutableStateOf(java.time.LocalDate.now().dayOfMonth.toString()) }
+    var selectedMonth by remember { mutableStateOf(java.time.LocalDate.now().monthValue.toString()) }
+    var selectedYear by remember { mutableStateOf(java.time.LocalDate.now().year.toString()) }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colors.background
@@ -671,6 +698,46 @@ fun TrainingSessionScreen(team: TeamData, onBack: () -> Unit) {
                         style = MaterialTheme.typography.body2,
                         color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Date picker
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = 2.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Training Date",
+                        style = MaterialTheme.typography.subtitle1,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = selectedDay,
+                            onValueChange = { if (it.length <= 2) selectedDay = it.filter { c -> c.isDigit() } },
+                            label = { Text("Day") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = selectedMonth,
+                            onValueChange = { if (it.length <= 2) selectedMonth = it.filter { c -> c.isDigit() } },
+                            label = { Text("Month") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = selectedYear,
+                            onValueChange = { if (it.length <= 4) selectedYear = it.filter { c -> c.isDigit() } },
+                            label = { Text("Year") },
+                            modifier = Modifier.weight(1.5f)
+                        )
+                    }
                 }
             }
 
@@ -849,7 +916,13 @@ fun TrainingSessionScreen(team: TeamData, onBack: () -> Unit) {
             // Save button
             Button(
                 onClick = {
-                    Database.recordTrainingSession(attendedPlayers, pointsAwarded)
+                    // Build the date string in ISO format (YYYY-MM-DD)
+                    val day = selectedDay.padStart(2, '0')
+                    val month = selectedMonth.padStart(2, '0')
+                    val year = selectedYear
+                    val dateString = "$year-$month-$day"
+
+                    Database.recordTrainingSession(team.id, attendedPlayers, pointsAwarded, dateString)
                     onBack()
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -860,5 +933,307 @@ fun TrainingSessionScreen(team: TeamData, onBack: () -> Unit) {
                 Text("Save Training Session")
             }
         }
+    }
+}
+
+@Composable
+fun TrainingHistoryScreen(team: TeamData, onBack: () -> Unit) {
+    var trainings by remember { mutableStateOf(Database.getTrainingsByTeam(team.id)) }
+    val allPlayers = remember { Database.getPlayersByTeam(team.id) }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colors.background
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp)
+        ) {
+            // Header with back button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Training History",
+                        style = MaterialTheme.typography.h5,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${trainings.size} training sessions",
+                        style = MaterialTheme.typography.body2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (trainings.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = 2.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(32.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.DateRange,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No training sessions yet",
+                            style = MaterialTheme.typography.h6,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = "Start a new training to record attendance and points",
+                            style = MaterialTheme.typography.body2,
+                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.4f),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(trainings) { training ->
+                        TrainingCard(
+                            training = training,
+                            allPlayers = allPlayers,
+                            onDelete = {
+                                Database.deleteTraining(training.id)
+                                trainings = Database.getTrainingsByTeam(team.id)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TrainingCard(
+    training: TrainingData,
+    allPlayers: List<PlayerData>,
+    onDelete: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val attendedPlayerNames = training.attendedPlayerIds.mapNotNull { playerId ->
+        allPlayers.find { it.id == playerId }?.name
+    }.sorted()
+
+    val totalPointsAwarded = training.pointsAwarded.values.sum()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded },
+        elevation = 4.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = formatDate(training.date),
+                        style = MaterialTheme.typography.h6,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row {
+                        // Attendance badge
+                        Card(
+                            backgroundColor = Color(0xFF4CAF50).copy(alpha = 0.2f),
+                            elevation = 0.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Person,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = Color(0xFF4CAF50)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "${training.attendedPlayerIds.size} present",
+                                    style = MaterialTheme.typography.caption,
+                                    color = Color(0xFF4CAF50)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Points badge
+                        if (totalPointsAwarded > 0) {
+                            Card(
+                                backgroundColor = MaterialTheme.colors.primary.copy(alpha = 0.2f),
+                                elevation = 0.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Star,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colors.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "$totalPointsAwarded points",
+                                        style = MaterialTheme.typography.caption,
+                                        color = MaterialTheme.colors.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Expand/collapse indicator
+                Text(
+                    text = if (expanded) "▲" else "▼",
+                    style = MaterialTheme.typography.body1,
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.3f)
+                )
+            }
+
+            // Expanded details
+            if (expanded) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Players Present:",
+                    style = MaterialTheme.typography.subtitle2,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (attendedPlayerNames.isEmpty()) {
+                    Text(
+                        text = "No players recorded",
+                        style = MaterialTheme.typography.body2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                    )
+                } else {
+                    attendedPlayerNames.forEach { name ->
+                        val playerId = allPlayers.find { it.name == name }?.id
+                        val pointsForPlayer = training.pointsAwarded[playerId] ?: 0
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color(0xFF4CAF50)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = name,
+                                    style = MaterialTheme.typography.body2
+                                )
+                            }
+                            if (pointsForPlayer > 0) {
+                                Text(
+                                    text = "+$pointsForPlayer pts",
+                                    style = MaterialTheme.typography.body2,
+                                    color = MaterialTheme.colors.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (training.notes.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Notes:",
+                        style = MaterialTheme.typography.subtitle2,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = training.notes,
+                        style = MaterialTheme.typography.body2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Delete button
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colors.error
+                    )
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Delete Training Record")
+                }
+            }
+        }
+    }
+}
+
+fun formatDate(isoDate: String): String {
+    return try {
+        val parts = isoDate.split("-")
+        if (parts.size == 3) {
+            val day = parts[2].toInt()
+            val month = when (parts[1].toInt()) {
+                1 -> "January"
+                2 -> "February"
+                3 -> "March"
+                4 -> "April"
+                5 -> "May"
+                6 -> "June"
+                7 -> "July"
+                8 -> "August"
+                9 -> "September"
+                10 -> "October"
+                11 -> "November"
+                12 -> "December"
+                else -> parts[1]
+            }
+            val year = parts[0]
+            "$day $month $year"
+        } else {
+            isoDate
+        }
+    } catch (e: Exception) {
+        isoDate
     }
 }

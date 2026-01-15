@@ -3,6 +3,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.time.LocalDate
 
 // Persistent JSON-based database
 // Data is stored locally at: ~/.winnerpoints_b93_data.json
@@ -92,7 +93,8 @@ object Database {
         save()
     }
 
-    fun recordTrainingSession(attendedPlayerIds: Set<Int>, pointsAwarded: Map<Int, Int>) {
+    fun recordTrainingSession(teamId: Int, attendedPlayerIds: Set<Int>, pointsAwarded: Map<Int, Int>, date: String = LocalDate.now().toString(), notes: String = "") {
+        // Update player stats
         data = data.copy(
             players = data.players.map { player ->
                 var updated = player
@@ -105,6 +107,38 @@ object Database {
                 updated
             }
         )
+
+        // Create training record
+        val newId = (data.trainings.maxOfOrNull { it.id } ?: 0) + 1
+        val training = TrainingData(
+            id = newId,
+            date = date,
+            teamId = teamId,
+            attendedPlayerIds = attendedPlayerIds.toList(),
+            pointsAwarded = pointsAwarded,
+            notes = notes
+        )
+        data = data.copy(trainings = data.trainings + training)
+        save()
+    }
+
+    // ===== TRAINING OPERATIONS =====
+
+    fun getAllTrainings(): List<TrainingData> {
+        return data.trainings.sortedByDescending { it.date }
+    }
+
+    fun getTrainingsByTeam(teamId: Int): List<TrainingData> {
+        return data.trainings.filter { it.teamId == teamId }.sortedByDescending { it.date }
+    }
+
+    fun getTrainingById(id: Int): TrainingData? {
+        return data.trainings.find { it.id == id }
+    }
+
+    fun deleteTraining(id: Int) {
+        // Note: This doesn't undo the points/attendance - that's historical
+        data = data.copy(trainings = data.trainings.filter { it.id != id })
         save()
     }
 
@@ -144,7 +178,8 @@ object Database {
 @Serializable
 data class DatabaseData(
     val players: List<PlayerData> = emptyList(),
-    val teams: List<TeamData> = emptyList()
+    val teams: List<TeamData> = emptyList(),
+    val trainings: List<TrainingData> = emptyList()
 )
 
 @Serializable
@@ -160,6 +195,16 @@ data class PlayerData(
 data class TeamData(
     val id: Int,
     val name: String
+)
+
+@Serializable
+data class TrainingData(
+    val id: Int,
+    val date: String,                           // ISO format: "2026-01-15"
+    val teamId: Int,                            // Which team this training was for
+    val attendedPlayerIds: List<Int>,           // Players who showed up
+    val pointsAwarded: Map<Int, Int> = emptyMap(), // Player ID -> points awarded
+    val notes: String = ""                      // Optional notes about the training
 )
 
 data class TeamWithPlayers(
