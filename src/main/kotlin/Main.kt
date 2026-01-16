@@ -482,7 +482,10 @@ fun TeamDashboardScreen(
 @Composable
 fun PlayerStatsScreen(player: PlayerData, onBack: () -> Unit) {
     // Get fresh player data
-    val currentPlayer = Database.getAllPlayers().find { it.id == player.id } ?: player
+    var currentPlayer by remember { mutableStateOf(Database.getAllPlayers().find { it.id == player.id } ?: player) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editPoints by remember { mutableStateOf(currentPlayer.points.toString()) }
+    var editTrainings by remember { mutableStateOf(currentPlayer.trainingsAttended.toString()) }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -639,6 +642,20 @@ fun PlayerStatsScreen(player: PlayerData, onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.weight(1f))
 
+            // Edit stats button
+            OutlinedButton(
+                onClick = {
+                    editPoints = currentPlayer.points.toString()
+                    editTrainings = currentPlayer.trainingsAttended.toString()
+                    showEditDialog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Edit Stats")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Delete player button
             Button(
                 onClick = {
@@ -655,6 +672,55 @@ fun PlayerStatsScreen(player: PlayerData, onBack: () -> Unit) {
                 Text("Delete Player")
             }
         }
+    }
+
+    // Edit stats dialog
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = { Text("Edit Player Stats") },
+            text = {
+                Column {
+                    Text(
+                        text = "Manually adjust stats for ${currentPlayer.name}",
+                        style = MaterialTheme.typography.body2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = editPoints,
+                        onValueChange = { editPoints = it.filter { c -> c.isDigit() } },
+                        label = { Text("Points") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editTrainings,
+                        onValueChange = { editTrainings = it.filter { c -> c.isDigit() } },
+                        label = { Text("Trainings Attended") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newPoints = editPoints.toIntOrNull() ?: currentPlayer.points
+                        val newTrainings = editTrainings.toIntOrNull() ?: currentPlayer.trainingsAttended
+                        Database.updatePlayerStats(currentPlayer.id, newPoints, newTrainings)
+                        currentPlayer = Database.getAllPlayers().find { it.id == player.id } ?: currentPlayer
+                        showEditDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

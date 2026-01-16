@@ -84,6 +84,20 @@ object Database {
         save()
     }
 
+    fun updatePlayerStats(id: Int, newPoints: Int? = null, newTrainingsAttended: Int? = null) {
+        data = data.copy(
+            players = data.players.map {
+                if (it.id == id) {
+                    it.copy(
+                        points = newPoints ?: it.points,
+                        trainingsAttended = newTrainingsAttended ?: it.trainingsAttended
+                    )
+                } else it
+            }
+        )
+        save()
+    }
+
     fun incrementTrainingsAttended(id: Int) {
         data = data.copy(
             players = data.players.map {
@@ -137,8 +151,25 @@ object Database {
     }
 
     fun deleteTraining(id: Int) {
-        // Note: This doesn't undo the points/attendance - that's historical
-        data = data.copy(trainings = data.trainings.filter { it.id != id })
+        val training = data.trainings.find { it.id == id } ?: return
+
+        // Undo the points and attendance from this training
+        data = data.copy(
+            players = data.players.map { player ->
+                var updated = player
+                // Remove attendance if player attended this training
+                if (player.id in training.attendedPlayerIds) {
+                    updated = updated.copy(trainingsAttended = maxOf(0, updated.trainingsAttended - 1))
+                }
+                // Remove points awarded in this training
+                if (player.id in training.pointsAwarded) {
+                    val pointsToRemove = training.pointsAwarded[player.id] ?: 0
+                    updated = updated.copy(points = maxOf(0, updated.points - pointsToRemove))
+                }
+                updated
+            },
+            trainings = data.trainings.filter { it.id != id }
+        )
         save()
     }
 
