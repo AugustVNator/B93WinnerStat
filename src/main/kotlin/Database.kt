@@ -84,7 +84,7 @@ object Database {
         save()
     }
 
-    fun updatePlayerStats(id: Int, newPoints: Int? = null, newTrainingsAttended: Int? = null) {
+        fun updatePlayerStats(id: Int, newPoints: Int? = null, newTrainingsAttended: Int? = null) {
         data = data.copy(
             players = data.players.map {
                 if (it.id == id) {

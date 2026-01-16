@@ -32,7 +32,15 @@ enum class Screen {
     TEAM_DASHBOARD,
     PLAYER_STATS,
     TRAINING_SESSION,
-    TRAINING_HISTORY
+    TRAINING_HISTORY,
+    LEADERBOARD
+}
+
+enum class LeaderboardType {
+    TOP_SCORERS,
+    BEST_ATTENDANCE,
+    WIN_RATE,
+    AVG_POINTS_PER_TRAINING
 }
 
 fun main() = application {
@@ -49,11 +57,60 @@ fun main() = application {
 }
 
 @Composable
+fun StatItem(label: String, value: String) {
+    Column {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.caption,
+            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.body1,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+fun ClickableStatItem(label: String, value: String, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(
+                color = MaterialTheme.colors.primary.copy(alpha = 0.05f),
+                shape = MaterialTheme.shapes.small
+            )
+            .padding(8.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.caption,
+            color = MaterialTheme.colors.primary
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.body1,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colors.primary
+            )
+            Text(
+                text = " ›",
+                style = MaterialTheme.typography.body1,
+                color = MaterialTheme.colors.primary.copy(alpha = 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
 @Preview
 fun App() {
     var currentScreen by remember { mutableStateOf(Screen.WELCOME) }
     var selectedTeam by remember { mutableStateOf<TeamData?>(null) }
     var selectedPlayer by remember { mutableStateOf<PlayerData?>(null) }
+    var selectedLeaderboardType by remember { mutableStateOf(LeaderboardType.TOP_SCORERS) }
 
     when (currentScreen) {
         Screen.WELCOME -> WelcomeScreen(
@@ -77,6 +134,10 @@ fun App() {
             },
             onTrainingHistory = {
                 currentScreen = Screen.TRAINING_HISTORY
+            },
+            onLeaderboard = { type ->
+                selectedLeaderboardType = type
+                currentScreen = Screen.LEADERBOARD
             }
         )
         Screen.PLAYER_STATS -> PlayerStatsScreen(
@@ -96,6 +157,17 @@ fun App() {
             team = selectedTeam!!,
             onBack = {
                 currentScreen = Screen.TEAM_DASHBOARD
+            }
+        )
+        Screen.LEADERBOARD -> LeaderboardScreen(
+            team = selectedTeam!!,
+            type = selectedLeaderboardType,
+            onBack = {
+                currentScreen = Screen.TEAM_DASHBOARD
+            },
+            onPlayerSelected = { player ->
+                selectedPlayer = player
+                currentScreen = Screen.PLAYER_STATS
             }
         )
     }
@@ -271,7 +343,8 @@ fun TeamDashboardScreen(
     onBack: () -> Unit,
     onPlayerSelected: (PlayerData) -> Unit,
     onTrainingSession: () -> Unit,
-    onTrainingHistory: () -> Unit
+    onTrainingHistory: () -> Unit,
+    onLeaderboard: (LeaderboardType) -> Unit
 ) {
     var players by remember { mutableStateOf(Database.getPlayersByTeam(team.id).sortedBy { it.name.lowercase() }) }
     var newPlayerName by remember { mutableStateOf("") }
@@ -349,6 +422,110 @@ fun TeamDashboardScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+
+            // Team Statistics Section
+            if (players.isNotEmpty()) {
+                val trainings = Database.getTrainingsByTeam(team.id)
+                val totalTrainings = trainings.size
+
+                // Calculate stats
+                val topScorer = players.maxByOrNull { it.points }
+                val bestAttendance = players.maxByOrNull { it.trainingsAttended }
+                val avgPointsPerTraining = if (totalTrainings > 0)
+                    players.sumOf { it.points }.toFloat() / totalTrainings
+                else 0f
+                val avgAttendance = if (totalTrainings > 0) {
+                    trainings.map { it.attendedPlayerIds.size }.average()
+                } else 0.0
+                val attendanceRate = if (totalTrainings > 0 && players.isNotEmpty()) {
+                    (avgAttendance / players.size * 100)
+                } else 0.0
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = 2.dp,
+                    backgroundColor = MaterialTheme.colors.surface
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Team Statistics",
+                                style = MaterialTheme.typography.subtitle1,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Tap to see full rankings →",
+                                style = MaterialTheme.typography.caption,
+                                color = MaterialTheme.colors.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            // Left column - non-clickable stats
+                            Column(modifier = Modifier.weight(1f)) {
+                                StatItem(
+                                    label = "Total Trainings",
+                                    value = "$totalTrainings"
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                StatItem(
+                                    label = "Avg Attendance",
+                                    value = "%.0f%%".format(attendanceRate)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                StatItem(
+                                    label = "Avg Points/Training",
+                                    value = "%.1f".format(avgPointsPerTraining)
+                                )
+                            }
+
+                            // Right column - clickable leaderboard stats
+                            Column(modifier = Modifier.weight(1f)) {
+                                ClickableStatItem(
+                                    label = "🏆 Top Scorer",
+                                    value = "${topScorer?.name ?: "-"} (${topScorer?.points ?: 0})",
+                                    onClick = { onLeaderboard(LeaderboardType.TOP_SCORERS) }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                ClickableStatItem(
+                                    label = "⭐ Best Attendance",
+                                    value = "${bestAttendance?.name ?: "-"} (${bestAttendance?.trainingsAttended ?: 0})",
+                                    onClick = { onLeaderboard(LeaderboardType.BEST_ATTENDANCE) }
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                if (players.any { it.trainingsAttended > 0 }) {
+                                    val highestWinRate = players
+                                        .filter { it.trainingsAttended > 0 }
+                                        .sortedWith(
+                                            compareByDescending<PlayerData> { it.points.toFloat() / it.trainingsAttended }
+                                                .thenByDescending { it.trainingsAttended }
+                                        )
+                                        .firstOrNull()
+                                    val winRate = if (highestWinRate != null && highestWinRate.trainingsAttended > 0)
+                                        (highestWinRate.points.toFloat() / highestWinRate.trainingsAttended * 100)
+                                    else 0f
+                                    ClickableStatItem(
+                                        label = "🔥 Highest Win %",
+                                        value = "${highestWinRate?.name ?: "-"} (%.0f%%)".format(winRate),
+                                        onClick = { onLeaderboard(LeaderboardType.WIN_RATE) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
             // Players header
             Text(
@@ -615,27 +792,85 @@ fun PlayerStatsScreen(player: PlayerData, onBack: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Average points per training
-            if (currentPlayer.trainingsAttended > 0) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = 4.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+            // Calculate additional stats
+            val teamPlayers = currentPlayer.teamId?.let { Database.getPlayersByTeam(it) } ?: emptyList()
+            val teamTrainings = currentPlayer.teamId?.let { Database.getTrainingsByTeam(it) } ?: emptyList()
+            val totalTeamTrainings = teamTrainings.size
+
+            // Player rankings
+            val pointsRank = teamPlayers.sortedByDescending { it.points }.indexOfFirst { it.id == currentPlayer.id } + 1
+            val attendanceRank = teamPlayers.sortedByDescending { it.trainingsAttended }.indexOfFirst { it.id == currentPlayer.id } + 1
+
+            // Win rate (points earned / trainings attended)
+            val winRate = if (currentPlayer.trainingsAttended > 0)
+                (currentPlayer.points.toFloat() / currentPlayer.trainingsAttended * 100)
+            else 0f
+
+            // Attendance rate (trainings attended / total team trainings)
+            val attendanceRate = if (totalTeamTrainings > 0)
+                (currentPlayer.trainingsAttended.toFloat() / totalTeamTrainings * 100)
+            else 0f
+
+            // Team averages
+            val teamAvgPoints = if (teamPlayers.isNotEmpty()) teamPlayers.map { it.points }.average() else 0.0
+            val teamAvgAttendance = if (teamPlayers.isNotEmpty()) teamPlayers.map { it.trainingsAttended }.average() else 0.0
+
+            // Extended stats card
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = 4.dp
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Performance Stats",
+                        style = MaterialTheme.typography.subtitle1,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "Average Points per Training",
-                            style = MaterialTheme.typography.body1,
-                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "%.2f".format(currentPlayer.points.toFloat() / currentPlayer.trainingsAttended),
-                            style = MaterialTheme.typography.h4,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            StatItem(
+                                label = "Points Rank",
+                                value = "#$pointsRank of ${teamPlayers.size}"
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            StatItem(
+                                label = "Attendance Rank",
+                                value = "#$attendanceRank of ${teamPlayers.size}"
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            StatItem(
+                                label = "Attendance Rate",
+                                value = "%.0f%%".format(attendanceRate)
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            StatItem(
+                                label = "Win Rate",
+                                value = "%.0f%%".format(winRate)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            StatItem(
+                                label = "Pts vs Team Avg",
+                                value = if (currentPlayer.points >= teamAvgPoints)
+                                    "+%.1f".format(currentPlayer.points - teamAvgPoints)
+                                else
+                                    "%.1f".format(currentPlayer.points - teamAvgPoints)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            if (currentPlayer.trainingsAttended > 0) {
+                                StatItem(
+                                    label = "Avg Points/Training",
+                                    value = "%.2f".format(currentPlayer.points.toFloat() / currentPlayer.trainingsAttended)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1301,5 +1536,216 @@ fun formatDate(isoDate: String): String {
         }
     } catch (e: Exception) {
         isoDate
+    }
+}
+
+@Composable
+fun LeaderboardScreen(
+    team: TeamData,
+    type: LeaderboardType,
+    onBack: () -> Unit,
+    onPlayerSelected: (PlayerData) -> Unit
+) {
+    val players = Database.getPlayersByTeam(team.id)
+    val trainings = Database.getTrainingsByTeam(team.id)
+    val totalTrainings = trainings.size
+
+    // Prepare sorted list based on type
+    data class LeaderboardEntry(
+        val player: PlayerData,
+        val value: Float,
+        val displayValue: String,
+        val secondaryInfo: String
+    )
+
+    val (title, entries) = when (type) {
+        LeaderboardType.TOP_SCORERS -> {
+            "🏆 Top Scorers" to players
+                // Primary: most points, Tiebreaker: fewer trainings (more efficient)
+                .sortedWith(compareByDescending<PlayerData> { it.points }.thenBy { it.trainingsAttended })
+                .map { player ->
+                    LeaderboardEntry(
+                        player = player,
+                        value = player.points.toFloat(),
+                        displayValue = "${player.points} pts",
+                        secondaryInfo = "${player.trainingsAttended} trainings attended"
+                    )
+                }
+        }
+        LeaderboardType.BEST_ATTENDANCE -> {
+            "⭐ Best Attendance" to players
+                // Primary: most trainings, Tiebreaker: more points
+                .sortedWith(compareByDescending<PlayerData> { it.trainingsAttended }.thenByDescending { it.points })
+                .map { player ->
+                    val rate = if (totalTrainings > 0)
+                        (player.trainingsAttended.toFloat() / totalTrainings * 100)
+                    else 0f
+                    LeaderboardEntry(
+                        player = player,
+                        value = player.trainingsAttended.toFloat(),
+                        displayValue = "${player.trainingsAttended} trainings",
+                        secondaryInfo = "%.0f%% attendance rate".format(rate)
+                    )
+                }
+        }
+        LeaderboardType.WIN_RATE -> {
+            "🔥 Win Rate (Points per Training)" to players
+                .filter { it.trainingsAttended > 0 }
+                // Primary: highest win rate, Tiebreaker: more trainings (more reliable stat)
+                .sortedWith(
+                    compareByDescending<PlayerData> { it.points.toFloat() / it.trainingsAttended }
+                        .thenByDescending { it.trainingsAttended }
+                        .thenByDescending { it.points }
+                )
+                .map { player ->
+                    val winRate = player.points.toFloat() / player.trainingsAttended * 100
+                    LeaderboardEntry(
+                        player = player,
+                        value = winRate,
+                        displayValue = "%.0f%%".format(winRate),
+                        secondaryInfo = "${player.points} pts in ${player.trainingsAttended} trainings"
+                    )
+                }
+        }
+        LeaderboardType.AVG_POINTS_PER_TRAINING -> {
+            "📊 Average Points per Training" to players
+                .filter { it.trainingsAttended > 0 }
+                // Primary: highest avg, Tiebreaker: more trainings (more reliable stat)
+                .sortedWith(
+                    compareByDescending<PlayerData> { it.points.toFloat() / it.trainingsAttended }
+                        .thenByDescending { it.trainingsAttended }
+                        .thenByDescending { it.points }
+                )
+                .map { player ->
+                    val avg = player.points.toFloat() / player.trainingsAttended
+                    LeaderboardEntry(
+                        player = player,
+                        value = avg,
+                        displayValue = "%.2f avg".format(avg),
+                        secondaryInfo = "${player.points} pts / ${player.trainingsAttended} trainings"
+                    )
+                }
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colors.background
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(32.dp)
+        ) {
+            // Header with back button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.h5,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${team.name} • ${entries.size} players",
+                        style = MaterialTheme.typography.body2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (entries.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = 2.dp
+                ) {
+                    Text(
+                        text = "No data available yet. Players need to attend trainings first.",
+                        modifier = Modifier.padding(24.dp),
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(entries.size) { index ->
+                        val entry = entries[index]
+                        val rank = index + 1
+
+                        // Determine medal/rank display
+                        val rankDisplay = when (rank) {
+                            1 -> "🥇"
+                            2 -> "🥈"
+                            3 -> "🥉"
+                            else -> "#$rank"
+                        }
+
+                        // Highlight color for top 3
+                        val cardColor = when (rank) {
+                            1 -> Color(0xFFFFD700).copy(alpha = 0.1f)
+                            2 -> Color(0xFFC0C0C0).copy(alpha = 0.1f)
+                            3 -> Color(0xFFCD7F32).copy(alpha = 0.1f)
+                            else -> MaterialTheme.colors.surface
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPlayerSelected(entry.player) },
+                            elevation = if (rank <= 3) 4.dp else 2.dp,
+                            backgroundColor = cardColor
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Rank
+                                Text(
+                                    text = rankDisplay,
+                                    style = if (rank <= 3) MaterialTheme.typography.h5 else MaterialTheme.typography.body1,
+                                    modifier = Modifier.width(48.dp),
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                // Player info
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = entry.player.name,
+                                        style = MaterialTheme.typography.body1,
+                                        fontWeight = if (rank <= 3) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = entry.secondaryInfo,
+                                        style = MaterialTheme.typography.caption,
+                                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+
+                                // Value
+                                Text(
+                                    text = entry.displayValue,
+                                    style = MaterialTheme.typography.h6,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (rank <= 3) MaterialTheme.colors.primary else MaterialTheme.colors.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
