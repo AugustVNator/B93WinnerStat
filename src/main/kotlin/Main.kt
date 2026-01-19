@@ -1,4 +1,5 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -189,10 +191,11 @@ fun WelcomeScreen(onTeamSelected: (TeamData) -> Unit) {
         ) {
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Logo placeholder
-            Text(
-                text = "⚽",
-                fontSize = 64.sp
+            // Logo
+            Image(
+                painter = painterResource("logo.png"),
+                contentDescription = "B93 Logo",
+                modifier = Modifier.size(150.dp)
             )
 
             Spacer(modifier = Modifier.height(16.dp))
